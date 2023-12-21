@@ -1,0 +1,18 @@
+MONGO_PORT = 27017
+MONGO_HOST = "localhost"
+MONGO_DATABASE = "global_whois_07_07"
+# MONGO_DATABASE = "whois_crawler"
+DATABASE_SUCCESS_COLLECTION = "com_success"
+DATABASE_ERROR_COLLECTION = "com_error2"
+DATABASE_QUEUE_COLLECTION = "com_queue2"
+
+# MONGO_DATABASE = "whois_crawler2"
+# DATABASE_SUCCESS_COLLECTION = "success"
+# DATABASE_ERROR_COLLECTION = "error"
+
+# elastic configs
+ELASTIC_PORT = 9200
+ELASTIC_HOST = "81.91.137.50"
+# ELASTIC_HOST = "127.0.0.1"
+ELASTIC_INDEX_NAME = "global_whois_new"
+# ELASTIC_INDEX_NAME = "whois"

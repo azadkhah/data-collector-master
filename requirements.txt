@@ -1,0 +1,5 @@
+python-whois==0.7.2
+elasticsearch==7.5.1
+elasticsearch-dsl==7.1.0
+schedule==1.0.0
+requests

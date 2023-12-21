@@ -1,0 +1,81 @@
+stages:
+    - build
+    - deploy
+
+Build & Push:
+    image: docker:19.03.8
+    stage: build
+    only:
+        refs:
+            - master
+    before_script:
+        # Generate Version
+        - CURRENT_TAG=$CI_COMMIT_SHORT_SHA
+        - echo '>> CURRENT BUILD TAG :' $CURRENT_TAG
+        # Login into Docker Registry
+        - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASS $CI_REGISTRY_URL
+    script:
+        # Build Image
+        - docker pull $CI_REGISTRY_URL/$CI_PROJECT_PATH:latest || true
+        - docker build --cache-from $CI_REGISTRY_URL/$CI_PROJECT_PATH:latest --tag $CI_REGISTRY_URL/$CI_PROJECT_PATH:$CURRENT_TAG --tag $CI_REGISTRY_URL/$CI_PROJECT_PATH:latest .
+        # Push Image
+        - docker push $CI_REGISTRY_URL/$CI_PROJECT_PATH:$CURRENT_TAG
+        - docker push $CI_REGISTRY_URL/$CI_PROJECT_PATH:latest
+
+Deploy & Health-Check @netseen.io:
+    image: alpine:3.13
+    stage: deploy
+    only:
+        refs:
+            - master
+    environment:
+        name: prod-netseen
+        url: https://netseen.io
+    before_script:
+        # Config SSH
+        - apk update && apk add sshpass openssh
+        - alias ssh-deploy='sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no root@"$DEPLOY_ADDR"'
+        # Generate Tag
+        - CURRENT_TAG=$CI_COMMIT_SHORT_SHA
+        - echo '>> CURRENT BUILD TAG :' $CURRENT_TAG
+        # Login into Docker Registry
+        - ssh-deploy docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASS $CI_REGISTRY_URL
+    script:
+        # Fetch Trigger
+        - echo ">> SHUTDOWN RUNNIG SERVICE & FETCHING TRIGGER ..."
+        - |
+            ssh-deploy << EOT
+                git clone http://oath2:$TRIGGER_TOKEN@$TRIGGER_GIT_URL /tmp/triggers_repo
+                mkdir -p $DEPLOY_DIR/$CI_PROJECT_NAME || true
+                cd $DEPLOY_DIR/$CI_PROJECT_NAME
+                docker-compose down || true
+                cp -r /tmp/triggers_repo/$CI_PROJECT_NAME/. .
+                rm -rf /tmp/triggers_repo
+                sed -i "$ a IMAGE_TAG=$CI_PROJECT_PATH:$CURRENT_TAG" .env
+            EOT
+        # Deploy & Start
+        - echo ">> DEPLOYING $CI_PROJECT_PATH:$CURRENT_TAG ..."
+        - |
+            ssh-deploy <<EOT
+                docker pull $CI_REGISTRY_URL/$CI_PROJECT_PATH:$CURRENT_TAG
+                cd $DEPLOY_DIR/$CI_PROJECT_NAME
+                docker-compose up -d
+            EOT
+    after_script:
+        # check docker ps and return <1> if proccess is not up
+        - alias ssh-deploy='sshpass -p "$DEPLOY_PASS" ssh -o StrictHostKeyChecking=no root@"$DEPLOY_ADDR"'
+        - echo '>> WAIT FOR HEALTH CHECK ...'
+        - >
+            for i in $(seq 1 2); do
+                sleep 60;
+                ssh-deploy docker ps | grep $CI_PROJECT_PATH | grep Up
+            done
+        # keep 3 latest images & Clean up older images
+        - echo '>> CLEAN UP OLD IMAGES ...'
+        - |
+            ssh-deploy << EOT
+                docker images | grep $CI_PROJECT_PATH | tail +4 | awk '{ print $3; }' | xargs docker rmi
+            EOT
+
+
+        
